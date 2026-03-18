@@ -24,7 +24,8 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git url: 'https://github.com/NCATSTranslator/translator-ingests.git', branch: 'main'
+                cleanWs()
+                checkout scm
             }
         }
         
