@@ -47,11 +47,11 @@ class S3Uploader:
     Designed to run on EC2 instance with IAM role permissions.
     """
 
-    def __init__(self, bucket_name: str = "translator-ingests"):
+    def __init__(self, bucket_name: str = "kgx-translator-ingests"):
         """Initialize S3 uploader with EC2 IAM role credentials.
 
         Args:
-            bucket_name: S3 bucket name (default: translator-ingests)
+            bucket_name: S3 bucket name (default: kgx-translator-ingests)
         """
         self.bucket_name = bucket_name
         self.s3_client = boto3.client('s3')
