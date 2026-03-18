@@ -18,7 +18,7 @@ pipeline {
     }
     
     environment {
-        S3_BUCKET_NAME = 'translator-ingests'
+        S3_BUCKET_NAME = 'kgx-translator-ingests'
     }
     
     stages {
