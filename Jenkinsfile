@@ -114,6 +114,23 @@ pipeline {
                         }
                     } else {
                         // Run and upload specific source
+                        // Check if source needs update (unless OVERWRITE is set)
+                        def needsUpdate = true
+                        if (!params.OVERWRITE) {
+                            def checkResult = sh(
+                                script: "uv run python check_source_needs_update.py ${params.SOURCE}",
+                                returnStatus: true
+                            )
+                            needsUpdate = (checkResult == 0)
+                            
+                            if (!needsUpdate) {
+                                echo "Source ${params.SOURCE} is already up to date in S3. Skipping."
+                                echo "Use OVERWRITE=true to force reprocessing."
+                                return
+                            }
+                        }
+                        
+                        echo "Processing ${params.SOURCE}..."
                         sh "make run SOURCES=${params.SOURCE} ${overwriteFlag}"
                         sh "make upload SOURCES=${params.SOURCE}"
                     }
