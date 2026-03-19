@@ -75,6 +75,22 @@ pipeline {
                         def results = [:]
                         for (source in sources) {
                             try {
+                                // Check if source needs update (unless OVERWRITE is set)
+                                def needsUpdate = true
+                                if (!params.OVERWRITE) {
+                                    def checkResult = sh(
+                                        script: "uv run python check_source_needs_update.py ${source}",
+                                        returnStatus: true
+                                    )
+                                    needsUpdate = (checkResult == 0)
+                                    
+                                    if (!needsUpdate) {
+                                        echo "Skipping ${source} - already up to date in S3"
+                                        results[source] = 'SKIPPED'
+                                        continue
+                                    }
+                                }
+                                
                                 echo "Processing ${source}..."
                                 sh "make run SOURCES=${source} ${overwriteFlag}"
                                 sh "make upload SOURCES=${source}"
