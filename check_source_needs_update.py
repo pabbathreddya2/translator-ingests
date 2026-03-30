@@ -1,47 +1,13 @@
 #!/usr/bin/env python3
 """
-Check if a source needs to be updated by comparing local/S3 versions with upstream.
+Check if a source needs to be updated by comparing existing build with upstream version.
+Reuses existing pipeline.py functions for consistency.
 Returns exit code 0 if update needed, 1 if can skip.
 """
 
 import sys
-import boto3
-import json
-from pathlib import Path
-from importlib import import_module
-
-def check_s3_version(source: str, bucket: str = "kgx-translator-ingests") -> dict:
-    """Check if source exists in S3 and get its version metadata."""
-    s3 = boto3.client('s3')
-    
-    try:
-        # Check for latest-build.json in S3
-        key = f"data/{source}/latest-build.json"
-        response = s3.get_object(Bucket=bucket, Key=key)
-        metadata = json.loads(response['Body'].read())
-        return metadata
-    except s3.exceptions.NoSuchKey:
-        return None
-    except Exception as e:
-        print(f"Error checking S3: {e}", file=sys.stderr)
-        return None
-
-
-def get_upstream_version(source: str) -> str:
-    """Get the latest upstream version for a source."""
-    try:
-        # Import the source's module to get version
-        module = import_module(f"translator_ingest.ingests.{source}.{source}")
-        
-        if hasattr(module, 'get_latest_version'):
-            version = module.get_latest_version()
-            return version
-        else:
-            # No version detection, assume needs update
-            return "unknown"
-    except Exception as e:
-        print(f"Error getting upstream version: {e}", file=sys.stderr)
-        return "unknown"
+from translator_ingest.pipeline import get_latest_source_version, is_latest_build_metadata_current
+from translator_ingest.util.metadata import PipelineMetadata
 
 
 def main():
@@ -53,33 +19,27 @@ def main():
     
     print(f"Checking if {source} needs update...")
     
-    # Get upstream version
-    upstream_version = get_upstream_version(source)
-    print(f"  Upstream version: {upstream_version}")
-    
-    # Check S3 for existing build
-    s3_metadata = check_s3_version(source)
-    
-    if s3_metadata is None:
-        print(f"  S3: No existing build found")
-        print(f"  Decision: UPDATE NEEDED")
-        sys.exit(0)  # Need to run
-    
-    s3_version = s3_metadata.get('source_version', 'unknown')
-    print(f"  S3 version: {s3_version}")
-    
-    # Compare versions
-    if upstream_version == "unknown":
-        # Can't determine, run to be safe
-        print(f"  Decision: UPDATE NEEDED (version unknown)")
-        sys.exit(0)
-    
-    if s3_version == upstream_version:
-        print(f"  Decision: SKIP (versions match)")
-        sys.exit(1)  # Skip
-    else:
-        print(f"  Decision: UPDATE NEEDED (versions differ)")
-        sys.exit(0)  # Need to run
+    try:
+        # Get upstream version using existing pipeline function
+        upstream_version = get_latest_source_version(source)
+        print(f"  Upstream version: {upstream_version}")
+        
+        # Create pipeline metadata with upstream version
+        pipeline_metadata = PipelineMetadata(source, source_version=upstream_version)
+        
+        # Check if this version is already built
+        is_current = is_latest_build_metadata_current(pipeline_metadata)
+        
+        if is_current:
+            print(f"  ✓ {source} is up to date (version {upstream_version} already built)")
+            sys.exit(1)  # Exit 1 = skip processing
+        else:
+            print(f"  → {source} needs update (new version {upstream_version})")
+            sys.exit(0)  # Exit 0 = needs processing
+    except Exception as e:
+        print(f"  ! Error checking {source}: {e}")
+        print(f"  → Assuming update needed to be safe")
+        sys.exit(0)  # Exit 0 = needs processing (fail-safe)
 
 
 if __name__ == "__main__":

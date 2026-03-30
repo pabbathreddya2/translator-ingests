@@ -1,6 +1,11 @@
 pipeline {
     agent { label 'transltr-ci-build-node-03-24.04' }
     
+    triggers {
+        // Run weekly on Sundays at 2 AM EST
+        cron('0 2 * * 0')
+    }
+    
     parameters {
         choice(name: 'SOURCE', 
             choices: [
@@ -124,7 +129,7 @@ pipeline {
                             needsUpdate = (checkResult == 0)
                             
                             if (!needsUpdate) {
-                                echo "Source ${params.SOURCE} is already up to date in S3. Skipping."
+                                echo "Source ${params.SOURCE} is already up to date. Skipping."
                                 echo "Use OVERWRITE=true to force reprocessing."
                                 return
                             }
@@ -132,6 +137,44 @@ pipeline {
                         
                         echo "Processing ${params.SOURCE}..."
                         sh "make run SOURCES=${params.SOURCE} ${overwriteFlag}"
+                    }
+                }
+            }
+        }
+        
+        stage('Merge Sources') {
+            when {
+                expression { params.SOURCE == 'all' }
+            }
+            steps {
+                script {
+                    def overwriteFlag = params.OVERWRITE ? 'OVERWRITE=true' : ''
+                    echo "Merging all sources into translator_kg..."
+                    sh "make merge ${overwriteFlag}"
+                }
+            }
+        }
+        
+        stage('Create Releases') {
+            when {
+                expression { params.SOURCE == 'all' }
+            }
+            steps {
+                script {
+                    echo "Creating release packages..."
+                    sh "make release"
+                }
+            }
+        }
+        
+        stage('Upload to S3') {
+            steps {
+                script {
+                    if (params.SOURCE == 'all') {
+                        echo "Uploading all data and releases to S3..."
+                        sh "make upload-all"
+                    } else {
+                        echo "Uploading ${params.SOURCE} to S3..."
                         sh "make upload SOURCES=${params.SOURCE}"
                     }
                 }
