@@ -195,8 +195,30 @@ pipeline {
             steps {
                 script {
                     def overwriteFlag = params.OVERWRITE ? 'OVERWRITE=true' : ''
-                    echo "Merging all sources into translator_kg..."
-                    sh "make merge ${overwriteFlag}"
+                    
+                    // Parse results to get successful and skipped sources only (exclude failed)
+                    def sourcesToMerge = []
+                    if (env.PIPELINE_RESULTS) {
+                        def results = [:]
+                        env.PIPELINE_RESULTS.split(',').each { entry ->
+                            def parts = entry.split(':')
+                            results[parts[0]] = parts[1]
+                        }
+                        
+                        // Only merge sources that succeeded or were skipped
+                        sourcesToMerge = results.findAll { it.value in ['SUCCESS', 'SKIPPED'] }.keySet().join(' ')
+                        
+                        def failedSources = results.findAll { it.value == 'FAILED' }.keySet()
+                        if (failedSources) {
+                            echo "NOTE: Excluding failed source(s) from merge: ${failedSources}"
+                        }
+                    } else {
+                        // Fallback: merge all sources
+                        sourcesToMerge = 'alliance bgee bindingdb chembl cohd ctd ctkp dakp dgidb diseases drug_rep_hub drugcentral gene2phenotype geneticskp go_cam goa gtopdb hpoa icees intact ncbi_gene panther pathbank semmeddb sider signor tmkp ttd ubergraph'
+                    }
+                    
+                    echo "Merging sources into translator_kg: ${sourcesToMerge}"
+                    sh "make merge SOURCES='${sourcesToMerge}' ${overwriteFlag}"
                 }
             }
         }
