@@ -67,6 +67,9 @@ pipeline {
                 script {
                     def overwriteFlag = params.OVERWRITE ? 'OVERWRITE=true' : ''
                     
+                    // Store results at pipeline level so other stages can access
+                    env.PIPELINE_RESULTS = ''
+                    
                     if (params.SOURCE == 'all') {
                         // Get list of all sources from Makefile
                         def sources = ['alliance', 'bgee', 'bindingdb', 'chembl', 'cohd', 'ctd', 
@@ -76,7 +79,7 @@ pipeline {
                                       'panther', 'pathbank', 'semmeddb', 'sider', 'signor', 
                                       'tmkp', 'ttd', 'ubergraph']
                         
-                        // Run and upload each source individually
+                        // Run each source that needs updating
                         def results = [:]
                         for (source in sources) {
                             try {
@@ -90,7 +93,7 @@ pipeline {
                                     needsUpdate = (checkResult == 0)
                                     
                                     if (!needsUpdate) {
-                                        echo "Skipping ${source} - already up to date in S3"
+                                        echo "Skipping ${source} - already up to date"
                                         results[source] = 'SKIPPED'
                                         continue
                                     }
@@ -113,10 +116,15 @@ pipeline {
                             echo "${source}: ${status}"
                         }
                         
-                        // Fail build if any source failed
-                        if (results.any { it.value == 'FAILED' }) {
-                            error("Some sources failed. Check logs above.")
+                        // Log warning if any source failed, but continue to merge/release
+                        def failedSources = results.findAll { it.value == 'FAILED' }
+                        if (failedSources) {
+                            echo "\nWARNING: ${failedSources.size()} source(s) failed: ${failedSources.keySet()}"
+                            echo "Continuing with merge/release for successful sources..."
                         }
+                        
+                        // Store results for next stage
+                        env.PIPELINE_RESULTS = results.collect { k, v -> "${k}:${v}" }.join(',')
                     } else {
                         // Run and upload specific source
                         // Check if source needs update (unless OVERWRITE is set)
@@ -137,6 +145,44 @@ pipeline {
                         
                         echo "Processing ${params.SOURCE}..."
                         sh "make run SOURCES=${params.SOURCE} ${overwriteFlag}"
+                    }
+                }
+            }
+        }
+        
+        stage('Download Skipped Sources from S3') {
+            when {
+                expression { params.SOURCE == 'all' && !params.OVERWRITE }
+            }
+            steps {
+                script {
+                    // Parse results from previous stage
+                    if (env.PIPELINE_RESULTS) {
+                        def results = [:]
+                        env.PIPELINE_RESULTS.split(',').each { entry ->
+                            def parts = entry.split(':')
+                            results[parts[0]] = parts[1]
+                        }
+                        
+                        def skippedSources = results.findAll { it.value == 'SKIPPED' }.keySet()
+                        
+                        if (skippedSources) {
+                            echo "Downloading ${skippedSources.size()} skipped source(s) from S3 for merge: ${skippedSources}"
+                            
+                            skippedSources.each { source ->
+                                try {
+                                    echo "Downloading ${source} from S3..."
+                                    sh """
+                                        mkdir -p data/${source}
+                                        aws s3 sync s3://${env.S3_BUCKET_NAME}/data/${source}/ data/${source}/ --exclude "*.tar.gz"
+                                    """
+                                } catch (Exception e) {
+                                    echo "WARNING: Failed to download ${source} from S3: ${e.message}"
+                                }
+                            }
+                        } else {
+                            echo "No skipped sources to download from S3"
+                        }
                     }
                 }
             }
