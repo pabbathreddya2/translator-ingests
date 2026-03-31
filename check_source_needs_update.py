@@ -47,7 +47,8 @@ def main():
         pipeline_metadata.transform_version = get_transform_version(source)
         pipeline_metadata.node_norm_version = get_current_node_norm_version()
         
-        current_build_version = pipeline_metadata.build_version
+        # Generate the build version from components
+        current_build_version = pipeline_metadata.generate_build_version()
         
         # Check S3 for existing build
         s3_metadata = check_s3_version(source)
