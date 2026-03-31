@@ -10,6 +10,7 @@ import json
 from translator_ingest.pipeline import get_latest_source_version, get_transform_version
 from translator_ingest.util.metadata import PipelineMetadata
 from translator_ingest.normalize import get_current_node_norm_version
+from translator_ingest.util.biolink import get_current_biolink_version
 
 
 def check_s3_version(source: str, bucket: str = "kgx-translator-ingests") -> dict:
@@ -46,6 +47,7 @@ def main():
         pipeline_metadata = PipelineMetadata(source, source_version=upstream_version)
         pipeline_metadata.transform_version = get_transform_version(source)
         pipeline_metadata.node_norm_version = get_current_node_norm_version()
+        pipeline_metadata.biolink_version = get_current_biolink_version()
         
         # Generate the build version from components
         current_build_version = pipeline_metadata.generate_build_version()
