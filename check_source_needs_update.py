@@ -7,8 +7,9 @@ Returns exit code 0 if update needed, 1 if can skip.
 import sys
 import boto3
 import json
-from translator_ingest.pipeline import get_latest_source_version
+from translator_ingest.pipeline import get_latest_source_version, get_transform_version
 from translator_ingest.util.metadata import PipelineMetadata
+from translator_ingest.normalize import get_current_node_norm_version
 
 
 def check_s3_version(source: str, bucket: str = "kgx-translator-ingests") -> dict:
@@ -41,8 +42,11 @@ def main():
         upstream_version = get_latest_source_version(source)
         print(f"  Upstream version: {upstream_version}")
         
-        # Create pipeline metadata with upstream version to get build_version
+        # Create pipeline metadata and set all version components
         pipeline_metadata = PipelineMetadata(source, source_version=upstream_version)
+        pipeline_metadata.transform_version = get_transform_version(source)
+        pipeline_metadata.node_norm_version = get_current_node_norm_version()
+        
         current_build_version = pipeline_metadata.build_version
         
         # Check S3 for existing build
